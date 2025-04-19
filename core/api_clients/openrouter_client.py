@@ -10,6 +10,7 @@ from openai import OpenAI
 from core.utils.logging_setup import logger
 from core.utils.constants import OPENROUTER_API_KEY, OPENROUTER_BASE_URL
 from core.models.api_key_rotator import APIKeyRotator
+from core.db_logger import log_bot_status
 
 # Global variables for response tracking
 openrouter_responses = []
@@ -33,6 +34,7 @@ def save_ai_response_by_model(response: str, model_id: str):
         openrouter_responses = openrouter_responses[-100:]
 
 async def call_openrouter_api_for_direction(prompt: str, symbol: str, model_id: str, rotator: APIKeyRotator) -> str:
+    await log_bot_status(status="API_CALL", stage="openrouter_call", details={"symbol": symbol, "model_id": model_id})
     """
     Call the OpenRouter API to get a trading direction.
     
@@ -103,6 +105,7 @@ async def call_openrouter_api_for_direction(prompt: str, symbol: str, model_id: 
         completion = await asyncio.wait_for(api_call_task(), timeout=30.0)
         response_time = time.monotonic() - start_time
         logger.info(f"OpenRouter API ({model_id}) response time for {symbol}: {response_time:.2f} seconds")
+        await log_bot_status(status="API_RESULT", stage="openrouter_result", details={"symbol": symbol, "model_id": model_id, "response_time": response_time})
         
         if completion and completion.choices and len(completion.choices) > 0:
             final_content = getattr(completion.choices[0].message, 'content', None)
@@ -113,7 +116,7 @@ async def call_openrouter_api_for_direction(prompt: str, symbol: str, model_id: 
         if final_content:
             logger.info(f"OpenRouter ({model_id}) response received for {symbol}: {final_content[:80]}...")
             save_ai_response_by_model(final_content, model_id)
-            
+            await log_bot_status(status="API_RESULT_CONTENT", stage="openrouter_content", details={"symbol": symbol, "model_id": model_id, "content": final_content[:200]})
             # Extract the signal from the response
             if "TYPE: BUY" in final_content.upper():
                 logger.info(f"OpenRouter ({model_id}) signal for {symbol}: BUY")
@@ -130,15 +133,18 @@ async def call_openrouter_api_for_direction(prompt: str, symbol: str, model_id: 
         else:
             logger.warning(f"OpenRouter ({model_id}) response for {symbol} had no content.")
             save_ai_response_by_model("INVALID_OUTPUT", model_id)
+            await log_bot_status(status="API_RESULT_EMPTY", stage="openrouter_empty", details={"symbol": symbol, "model_id": model_id})
             return "INVALID_OUTPUT"
             
     except Exception as e:
         elapsed = time.monotonic() - start_time
         logger.error(f"Error calling OpenRouter API ({model_id}, {symbol}): {type(e).__name__} - {e} in {elapsed:.2f}s", exc_info=True)
         save_ai_response_by_model(f"Exception: {type(e).__name__} - {e}", model_id)
+        await log_bot_status(status="ERROR", stage="openrouter_exception", details={"symbol": symbol, "model_id": model_id, "error": str(e)})
         return e
         
     finally:
         if rotator:
             rotator.release_model_usage()
             logger.info(f"Released OpenRouter client usage for model {model_id} (Symbol: {symbol})")
+            await log_bot_status(status="API_RELEASE", stage="openrouter_release", details={"symbol": symbol, "model_id": model_id})

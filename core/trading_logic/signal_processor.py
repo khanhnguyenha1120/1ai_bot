@@ -8,11 +8,14 @@ from typing import Dict, List, Optional, Any
 from collections import Counter
 
 from core.utils.logging_setup import logger
+from config import Config
 from core.utils.constants import AI_MODELS_TO_CALL
 from core.api_clients.xai_client import call_xai_api_for_direction
 from core.api_clients.openrouter_client import call_openrouter_api_for_direction
 from core.api_clients.gemini_client import call_gemini_api_for_direction
 from core.api_clients.g4f_client import call_gpt4o_api_for_direction
+from core.telegram_utils import send_telegram_message
+from core.db_logger import log_bot_status
 
 async def get_ai_signals(prompt: str, symbol: str, 
                         gemini_rotator=None, 
@@ -52,56 +55,64 @@ async def get_ai_signals(prompt: str, symbol: str,
     for model_key, model_cfg in AI_MODELS_TO_CALL.items():
         model_start_time = time.monotonic()
         logger.info(f"[{symbol}] Processing AI model: {model_key} | type: {model_cfg['type']}")
+        await log_bot_status(status="AI_MODEL_CALL", stage="signal_processor_model_start", details={"symbol": symbol, "model": model_key, "type": model_cfg['type']})
         try:
             if model_cfg['type'] == 'g4f':
                 try:
                     logger.info(f"[{symbol}] Calling g4f API (model: {model_key})")
                     ai_result = await call_gpt4o_api_for_direction(prompt, symbol)
                     logger.debug(f"[{symbol}] Raw g4f result: {ai_result}")
+                    await log_bot_status(status="AI_MODEL_RESULT", stage="signal_processor_model_result", details={"symbol": symbol, "model": model_key, "type": "g4f", "result": str(ai_result)[:200]})
                 except Exception as e:
                     logger.error(f"[{symbol}] Error calling g4f API: {e}")
                     logger.debug(f"[{symbol}] g4f API call traceback", exc_info=True)
                     ai_result = f"Error: g4f fail - {str(e)[:50]}"
                     error_calls += 1
+                    await log_bot_status(status="ERROR", stage="signal_processor_model_error", details={"symbol": symbol, "model": model_key, "type": "g4f", "error": str(e)})
             elif model_cfg['type'] == 'xai':
                 try:
                     logger.info(f"[{symbol}] Calling xAI API (model: {model_key})")
                     ai_result = await call_xai_api_for_direction(prompt, symbol)
                     logger.debug(f"[{symbol}] Raw xAI result: {ai_result}")
+                    await log_bot_status(status="AI_MODEL_RESULT", stage="signal_processor_model_result", details={"symbol": symbol, "model": model_key, "type": "xai", "result": str(ai_result)[:200]})
                 except Exception as e:
                     logger.error(f"[{symbol}] Error calling xAI API: {e}")
                     logger.debug(f"[{symbol}] xAI API call traceback", exc_info=True)
                     ai_result = f"Error: xAI fail - {str(e)[:50]}"
                     error_calls += 1
+                    await log_bot_status(status="ERROR", stage="signal_processor_model_error", details={"symbol": symbol, "model": model_key, "type": "xai", "error": str(e)})
             elif model_cfg['type'] == 'gemini':
                 if not gemini_rotator:
                     logger.warning(f"[{symbol}] No Gemini rotator available")
                     ai_result = "NO_GEMINI_ROTATOR"
                     error_calls += 1
+                    await log_bot_status(status="ERROR", stage="signal_processor_gemini_rotator", details={"symbol": symbol, "model": model_key, "type": "gemini", "error": "NO_GEMINI_ROTATOR"})
                 else:
                     try:
                         logger.info(f"[{symbol}] Calling Gemini API (model: {model_key})")
                         ai_result = await call_gemini_api_for_direction(prompt, symbol, gemini_rotator)
                         logger.debug(f"[{symbol}] Raw Gemini result: {ai_result}")
+                        await log_bot_status(status="AI_MODEL_RESULT", stage="signal_processor_model_result", details={"symbol": symbol, "model": model_key, "type": "gemini", "result": str(ai_result)[:200]})
                     except Exception as e:
                         logger.error(f"[{symbol}] Error calling Gemini API: {e}")
                         logger.debug(f"[{symbol}] Gemini API call traceback", exc_info=True)
                         ai_result = f"Error: Gemini fail - {str(e)[:50]}"
                         error_calls += 1
             elif model_cfg['type'] == 'openrouter':
-                model_name = model_cfg['model_name']
-                rotator = openrouter_rotators.get(model_name)
+                rotator = openrouter_rotators.get(model_key) if openrouter_rotators else None
                 if not rotator:
-                    logger.warning(f"[{symbol}] No OpenRouter rotator for model {model_name}")
+                    logger.warning(f"[{symbol}] No OpenRouter rotator available for {model_key}")
                     ai_result = "NO_OPENROUTER_ROTATOR"
                     error_calls += 1
+                    await log_bot_status(status="ERROR", stage="signal_processor_openrouter_rotator", details={"symbol": symbol, "model": model_key, "type": "openrouter", "error": "NO_OPENROUTER_ROTATOR"})
                 else:
                     try:
-                        logger.info(f"[{symbol}] Calling OpenRouter API (model: {model_key}, model_name: {model_name})")
-                        ai_result = await call_openrouter_api_for_direction(prompt, symbol, model_name, rotator)
+                        logger.info(f"[{symbol}] Calling OpenRouter API (model: {model_key})")
+                        ai_result = await call_openrouter_api_for_direction(prompt, symbol, model_key, rotator)
                         logger.debug(f"[{symbol}] Raw OpenRouter result: {ai_result}")
+                        await log_bot_status(status="AI_MODEL_RESULT", stage="signal_processor_model_result", details={"symbol": symbol, "model": model_key, "type": "openrouter", "result": str(ai_result)[:200]})
                     except Exception as e:
-                        logger.error(f"[{symbol}] Error calling OpenRouter API with model {model_name}: {e}")
+                        logger.error(f"[{symbol}] Error calling OpenRouter API with model {model_key}: {e}")
                         logger.debug(f"[{symbol}] OpenRouter API call traceback", exc_info=True)
                         ai_result = f"Error: OpenRouter fail - {str(e)[:50]}"
                         error_calls += 1
@@ -117,9 +128,15 @@ async def get_ai_signals(prompt: str, symbol: str,
                     logger.info(f"[{symbol}] {model_key} returned valid signal: {ai_result}")
                     successful_calls += 1
                 else:
-                    logger.warning(f"[{symbol}] {model_key} returned invalid signal format: {ai_result}")
-                    ai_result = "INVALID_OUTPUT"
-                    error_calls += 1
+                     logger.warning(f"[{symbol}] {model_key} returned invalid signal format: {ai_result}")
+                     # Send Telegram notification for unexpected signal
+                     try:
+                         message = f"[ALERT] AI model {model_key} returned unexpected signal for {symbol}: {ai_result}"
+                         asyncio.create_task(send_telegram_message(message))
+                     except Exception as tele_err:
+                         logger.error(f"Failed to send Telegram notification: {tele_err}")
+                     ai_result = "INVALID_OUTPUT"
+                     error_calls += 1
             
             # Store result
             ai_results[model_key] = ai_result
@@ -136,7 +153,7 @@ async def get_ai_signals(prompt: str, symbol: str,
     logger.debug(f"[{symbol}] All AI results: {ai_results}")
     return ai_results
 
-def get_consensus_signal(ai_results: Dict[str, str], required_consensus: int = 2) -> Optional[str]:
+async def get_consensus_signal(ai_results: Dict[str, str], required_consensus: int = 2) -> Optional[str]:
     """
     Get consensus signal from multiple AI model results.
     
@@ -181,10 +198,12 @@ def get_consensus_signal(ai_results: Dict[str, str], required_consensus: int = 2
         if signal_counts[signal] >= required_consensus:
             logger.info(f"Consensus reached for {signal} (count: {signal_counts[signal]}/{total_valid})")
             consensus_signal = signal
+            await log_bot_status(status="CONSENSUS", stage="signal_processor_consensus", details={"signal": signal, "count": signal_counts[signal], "total": total_valid})
             break
     
     if not consensus_signal:
         logger.info(f"No consensus reached. Required: {required_consensus}, highest count: {signal_counts.most_common(1)[0] if signal_counts else 'None'}")
+        await log_bot_status(status="NO_CONSENSUS", stage="signal_processor_consensus", details={"highest": signal_counts.most_common(1)[0] if signal_counts else None, "total": total_valid})
         # Log the models that voted for each signal
         for signal in ["BUY", "SELL", "NO SIGNAL"]:
             models_with_signal = [model for model, result in valid_results.items() if result == signal]

@@ -4,6 +4,7 @@ Migrated from ai_trading_v2.py: includes model call functions for direction, nor
 """
 import asyncio
 import logging
+from core.db_logger import log_bot_status
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -15,6 +16,7 @@ from core.bot_orchestrator import (
 
 # --- GPT-4o (g4f) Direction Call ---
 async def call_gpt4o_api_for_direction(prompt: str, symbol: str) -> str:
+    await log_bot_status(status="AI_MODEL_CALL", stage="call_gpt4o_api_for_direction", details={"symbol": symbol, "model": "gpt-4o-g4f"})
     logger = logging.getLogger("AISignal")
     logger.info(f"--- Calling gpt-4o API (g4f) for {symbol} ---")
     logger.debug(f"gpt-4o (g4f) request | symbol: {symbol} | prompt: {prompt[:200]}")
@@ -35,16 +37,20 @@ async def call_gpt4o_api_for_direction(prompt: str, symbol: str) -> str:
         if final_content:
             norm_output = normalize_ai_output(final_content)
             logger.info(f"gpt-4o (g4f) Response Interpreted for {symbol}: {norm_output}")
+            await log_bot_status(status="AI_MODEL_RESULT", stage="call_gpt4o_api_for_direction", details={"symbol": symbol, "model": "gpt-4o-g4f", "result": norm_output})
             return norm_output
         else:
             logger.warning(f"gpt-4o (g4f) response for {symbol} no content.")
+            await log_bot_status(status="AI_MODEL_NO_CONTENT", stage="call_gpt4o_api_for_direction", details={"symbol": symbol, "model": "gpt-4o-g4f"})
             return "INVALID_OUTPUT"
     except Exception as e:
         logger.error(f"Generic Error calling gpt-4o API (g4f) for {symbol}: {e}", exc_info=True)
+        await log_bot_status(status="AI_MODEL_ERROR", stage="call_gpt4o_api_for_direction", details={"symbol": symbol, "model": "gpt-4o-g4f", "error": str(e)})
         return f"Error: Generic g4f fail"
 
 # --- xAI (Grok) Direction Call ---
 async def call_xai_api_for_direction(prompt: str, symbol: str) -> str:
+    await log_bot_status(status="AI_MODEL_CALL", stage="call_xai_api_for_direction", details={"symbol": symbol, "model": XAI_MODEL})
     logger = logging.getLogger("AISignal")
     logger.info(f"--- Calling xAI API ({XAI_MODEL}) for {symbol} ---")
     logger.debug(f"xAI request | symbol: {symbol} | model: {XAI_MODEL} | prompt: {prompt[:200]}")
@@ -67,18 +73,36 @@ async def call_xai_api_for_direction(prompt: str, symbol: str) -> str:
         if final_content:
             norm_output = normalize_ai_output(final_content)
             logger.info(f"xAI Response Interpreted for {symbol}: {norm_output}")
+            await log_bot_status(status="AI_MODEL_RESULT", stage="call_xai_api_for_direction", details={"symbol": symbol, "model": XAI_MODEL, "result": norm_output})
             return norm_output
         else:
             logger.warning(f"xAI response for {symbol} no content.")
+            await log_bot_status(status="AI_MODEL_NO_CONTENT", stage="call_xai_api_for_direction", details={"symbol": symbol, "model": XAI_MODEL})
             return "INVALID_OUTPUT"
-    except AuthenticationError as e: logger.error(f"xAI Auth Error {symbol}: {e}"); return f"Error: xAI Auth fail"
-    except RateLimitError as e: logger.error(f"xAI Rate Limit {symbol}: {e}"); return f"Error: xAI Rate Limit"
-    except APIConnectionError as e: logger.error(f"xAI Connection Error {symbol}: {e}"); return f"Error: xAI Connect fail"
-    except APIStatusError as e: logger.error(f"xAI Status Error {symbol}: Status={e.status_code}"); return f"Error: xAI Status {e.status_code}"
-    except Exception as e: logger.error(f"Generic Error calling xAI API for {symbol}: {e}", exc_info=True); return f"Error: Generic xAI fail"
+    except AuthenticationError as e:
+        logger.error(f"xAI Auth Error {symbol}: {e}")
+        await log_bot_status(status="AI_MODEL_ERROR", stage="call_xai_api_for_direction", details={"symbol": symbol, "model": XAI_MODEL, "error": f"Auth: {e}"})
+        return f"Error: xAI Auth fail"
+    except RateLimitError as e:
+        logger.error(f"xAI Rate Limit {symbol}: {e}")
+        await log_bot_status(status="AI_MODEL_ERROR", stage="call_xai_api_for_direction", details={"symbol": symbol, "model": XAI_MODEL, "error": f"RateLimit: {e}"})
+        return f"Error: xAI Rate Limit"
+    except APIConnectionError as e:
+        logger.error(f"xAI Connection Error {symbol}: {e}")
+        await log_bot_status(status="AI_MODEL_ERROR", stage="call_xai_api_for_direction", details={"symbol": symbol, "model": XAI_MODEL, "error": f"Connect: {e}"})
+        return f"Error: xAI Connect fail"
+    except APIStatusError as e:
+        logger.error(f"xAI Status Error {symbol}: Status={e.status_code}")
+        await log_bot_status(status="AI_MODEL_ERROR", stage="call_xai_api_for_direction", details={"symbol": symbol, "model": XAI_MODEL, "error": f"Status: {e.status_code}"})
+        return f"Error: xAI Status {e.status_code}"
+    except Exception as e:
+        logger.error(f"Generic Error calling xAI API for {symbol}: {e}", exc_info=True)
+        await log_bot_status(status="AI_MODEL_ERROR", stage="call_xai_api_for_direction", details={"symbol": symbol, "model": XAI_MODEL, "error": str(e)})
+        return f"Error: Generic xAI fail"
 
 # --- Gemini Direction Call ---
 async def call_gemini_api_for_direction(prompt: str, symbol: str) -> str:
+    await log_bot_status(status="AI_MODEL_CALL", stage="call_gemini_api_for_direction", details={"symbol": symbol, "model": "gemini"})
     logger = logging.getLogger("AISignal")
     logger.info(f"--- Calling Gemini API for {symbol} ---")
     logger.debug(f"Gemini request | symbol: {symbol} | prompt: {prompt[:200]}")
@@ -94,6 +118,7 @@ async def call_gemini_api_for_direction(prompt: str, symbol: str) -> str:
     try:
         # TODO: Implement Gemini API call logic here
         # Return a normalized output for now
+        await log_bot_status(status="AI_MODEL_RESULT", stage="call_gemini_api_for_direction", details={"symbol": symbol, "model": "gemini", "result": "NO_SIGNAL"})
         return "NO_SIGNAL"
     finally:
         gemini_rotator.release_model_usage()
@@ -111,6 +136,7 @@ def save_ai_response_by_model(response: str, model_id: str, folder: str = "ai_re
 
 # --- OpenRouter API Direction Call ---
 async def call_openrouter_api_for_direction(prompt: str, symbol: str, model_id: str, rotator) -> str | Exception:
+    await log_bot_status(status="AI_MODEL_CALL", stage="call_openrouter_api_for_direction", details={"symbol": symbol, "model": model_id})
     """
     Calls the specified OpenRouter model via the OpenAI-compatible API for trading direction.
     Automatically detects if the model should use reasoning based on model_id.
@@ -176,14 +202,18 @@ async def call_openrouter_api_for_direction(prompt: str, symbol: str, model_id: 
             final_content = None
         if final_content:
             save_ai_response_by_model(final_content, model_id)
-            return normalize_ai_output(final_content)
+            norm_output = normalize_ai_output(final_content)
+            await log_bot_status(status="AI_MODEL_RESULT", stage="call_openrouter_api_for_direction", details={"symbol": symbol, "model": model_id, "result": norm_output})
+            return norm_output
         else:
             logger.warning(f"OpenRouter ({model_id}) response for {symbol} had no content.")
+            await log_bot_status(status="AI_MODEL_NO_CONTENT", stage="call_openrouter_api_for_direction", details={"symbol": symbol, "model": model_id})
             save_ai_response_by_model("INVALID_OUTPUT", model_id)
             return "INVALID_OUTPUT"
     except Exception as e:
         elapsed = time.monotonic() - start_time
         logger.error(f"Error calling OpenRouter API ({model_id}, {symbol}): {type(e).__name__} - {e} in {elapsed:.2f}s", exc_info=False)
+        await log_bot_status(status="AI_MODEL_ERROR", stage="call_openrouter_api_for_direction", details={"symbol": symbol, "model": model_id, "error": str(e)})
         save_ai_response_by_model(f"Exception: {type(e).__name__} - {e}", model_id)
         return e
     finally:
@@ -193,6 +223,8 @@ async def call_openrouter_api_for_direction(prompt: str, symbol: str, model_id: 
 
 # --- Output Normalization Helper (improved) ---
 def normalize_ai_output(output) -> str:
+    # Optionally log normalization events
+    # asyncio.create_task(log_bot_status(status="AI_NORMALIZE", stage="normalize_ai_output", details={"output": str(output)[:100]}))
     """
     Normalizes AI response string or handles exceptions.
     Accepts:
@@ -234,6 +266,8 @@ from collections import Counter
 from typing import Dict, Any, Tuple
 
 def aggregate_ai_signals(model_results_dict: Dict[str, Dict[str, Any]], required_consensus: int = 3) -> Tuple[str, int, Dict[str, int]]:
+    # Optionally log consensus aggregation
+    # asyncio.create_task(log_bot_status(status="AI_CONSENSUS", stage="aggregate_ai_signals", details={"results": model_results_dict}))
     """
     Aggregates AI model results, counts votes, and determines consensus decision.
     Args:

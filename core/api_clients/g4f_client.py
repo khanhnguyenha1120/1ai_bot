@@ -1,6 +1,6 @@
 """
-G4F (GPT4Free) API client for the AI trading bot.
-Handles communication with GPT4o and other models via G4F.
+G4F (GPT4Online) API client for the AI trading bot.
+Handles communication with the G4F API for trading signal generation.
 """
 import asyncio
 import time
@@ -9,6 +9,8 @@ from g4f.client import AsyncClient
 
 from core.utils.logging_setup import logger
 from core.utils.constants import MODEL_GPT4O_G4F
+from config import Config
+from core.db_logger import log_bot_status
 
 # Global variables for response tracking
 g4f_responses = []

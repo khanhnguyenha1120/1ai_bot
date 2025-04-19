@@ -15,13 +15,13 @@ BOT_MAGIC_NUMBER = 345678
 
 # --- API Keys ---
 XAI_API_KEY = os.getenv("XAI_API_KEY", "xai-1OAfUX6PBW0fK9fx1s8sGk1uXhIzxUwluqZz1JlVHBjj55W8hK8T23aAMflaCsjtJPw8ps3NMvpQWR8u")
-XAI_MODEL = os.getenv("XAI_MODEL", "grok-3-fast-beta")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7602903955:AAH4fJlI2OoK7FsaCt6UxB3KA5NwgFg4KTs")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "-4677734700")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "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")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
 # --- Model Identifiers ---
+XAI_MODEL = "grok-3-fast-beta"
 MODEL_GROK = "grok/grok-3-fast-beta"
 MODEL_GPT4O_G4F = "gpt-4o"
 MODEL_GEMINI = "gemini-2.0-flash"

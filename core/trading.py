@@ -41,31 +41,22 @@ ACCOUNT = int(os.getenv("MT5_ACCOUNT", "79745631"))
 PASSWORD = os.getenv("MT5_PASSWORD", "Qaz123,./")
 SERVER = os.getenv("MT5_SERVER", "Exness-MT5Trial8")
 XAI_API_KEY = os.getenv("XAI_API_KEY", "xai-1OAfUX6PBW0fK9fx1s8sGk1uXhIzxUwluqZz1JlVHBjj55W8hK8T23aAMflaCsjtJPw8ps3NMvpQWR8u")
-XAI_MODEL = os.getenv("XAI_MODEL", "grok-3-fast-beta")
 TELEGRAM_BOT_TOKEN = "7602903955:AAH4fJlI2OoK7FsaCt6UxB3KA5NwgFg4KTs"
 TELEGRAM_CHAT_ID = "-4677734700"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "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")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
 # --- Model Identifiers ---
-MODEL_GROK = "grok/grok-3-fast-beta"
-MODEL_GPT4O_G4F = "gpt-4o"
-MODEL_GEMINI = "gemini-2.0-flash"
-MODEL_DEEPSEEK = "deepseek/deepseek-chat-v3-0324:free"
-MODEL_META = "meta-llama/llama-4-maverick:free"
-MODEL_NEMOTRON = "nvidia/llama-3.1-nemotron-ultra-253b-v1:free"
-MODEL_REKA = "google/gemma-3-12b-it:free"
-MODEL_NEMOTRON_SUPER = "nvidia/llama-3.3-nemotron-super-49b-v1:free"
-MODEL_QWEN = "qwen/qwen-2.5-7b-instruct:free"
 AI_MODELS_TO_CALL = {
-    "GROK": {"type": "xai", "model_name": XAI_MODEL},
-    "GPT4O": {"type": "g4f", "model_name": MODEL_GPT4O_G4F},
-    "DEEPSEEK": {"type": "openrouter", "model_name": MODEL_DEEPSEEK},
-    "GEMINI": {"type": "gemini", "model_name": MODEL_GEMINI},
-    "NEMOTRON": {"type": "openrouter", "model_name": MODEL_NEMOTRON},
-    "REKA": {"type": "openrouter", "model_name": MODEL_REKA},
-    "META": {"type": "openrouter", "model_name": MODEL_META},
-    "NEMOTRON_SUPER": {"type": "openrouter", "model_name": MODEL_NEMOTRON_SUPER},
-    "QWEN_INSTRUCT": {"type": "openrouter", "model_name": MODEL_QWEN},
+    "GROK": {"type": "xai", "model_name": Config.MODEL_GROK},
+    "GPT4O": {"type": "g4f", "model_name": Config.MODEL_GPT4O_G4F},
+    "DEEPSEEK": {"type": "openrouter", "model_name": Config.MODEL_DEEPSEEK},
+    "GEMINI": {"type": "gemini", "model_name": Config.MODEL_GEMINI},
+    "NEMOTRON": {"type": "openrouter", "model_name": Config.MODEL_NEMOTRON},
+    "REKA": {"type": "openrouter", "model_name": Config.MODEL_REKA},
+    "META": {"type": "openrouter", "model_name": Config.MODEL_META},
+    "NEMOTRON_SUPER": {"type": "openrouter", "model_name": Config.MODEL_NEMOTRON_SUPER},
+    "QWEN_INSTRUCT": {"type": "openrouter", "model_name": Config.MODEL_QWEN},
 }
 SYMBOL_SETTINGS = {
     "XAUUSD": {
@@ -126,107 +117,6 @@ gemini_rotator = None
 openrouter_rotators = {}
 gemini_api_keys = []
 openrouter_api_keys = []
-
-class APIKeyRotator:
-    def __init__(
-            self, keys, interval_seconds=60, api_type="gemini", model_name=MODEL_GEMINI
-    ):
-        if not keys:
-            raise ValueError("API keys list cannot be empty")
-        self._keys = deque(keys)
-        self._interval = interval_seconds
-        self._api_type = api_type.lower()
-        self._model_name = model_name
-        self._current_model = None
-        self._current_key = None
-        self._lock = threading.Lock()
-        self._timer = None
-        self._is_running = False
-        self._initial_setup_done = False
-        self._key_error_logged = {key: False for key in keys}
-        self._active_api_calls = 0
-    def _rotate_and_configure(self):
-        rescheduled = False
-        try:
-            with self._lock:
-                if not self._is_running:
-                    return
-                if self._active_api_calls > 0:
-                    logging.debug(
-                        f"[Rotator] Active API calls ({self._active_api_calls}). Delaying key rotation."
-                    )
-                    if self._is_running:
-                        self._timer = threading.Timer(
-                            self._interval, self._rotate_and_configure
-                        )
-                        self._timer.name = "KeyRotationTimerThread"
-                        self._timer.daemon = True
-                        self._timer.start()
-                        rescheduled = True
-                    return
-                self._keys.rotate(-1)
-                next_key = self._keys[0]
-                key_short = f"...{next_key[-4:]}"
-                if not self._key_error_logged.get(next_key, False):
-                    logging.debug(f"[Rotator] Trying to configure with key: {key_short}")
-                    if not next_key or len(next_key) < 35:
-                        if not self._key_error_logged.get(next_key, False):
-                            logging.warning(
-                                f"[Rotator] Key {key_short} seems invalid (length < 35). Skipping."
-                            )
-                            self._key_error_logged[next_key] = True
-                        return
-                    # ... (rest of the APIKeyRotator class remains the same)
-        except Exception as outer_e:
-            logging.error(
-                f"[Rotator] Unexpected error in _rotate_and_configure: {outer_e}",
-                exc_info=True,
-            )
-        finally:
-            with self._lock:
-                if self._is_running and not rescheduled:
-                    self._timer = threading.Timer(
-                        self._interval, self._rotate_and_configure
-                    )
-                    self._timer.name = "KeyRotationTimerThread"
-                    self._timer.daemon = True
-                    self._timer.start()
-    def start(self):
-        logging.debug(f"[Rotator] Starting {self._api_type} API key rotation process for {self._model_name}...")
-        with self._lock:
-            if self._is_running:
-                return
-            self._is_running = True
-            self._key_error_logged = {key: False for key in self._keys}
-            initial_thread = threading.Thread(
-                target=self._rotate_and_configure,
-                name="InitialConfigThread",
-                daemon=True,
-            )
-            initial_thread.start()
-    def stop(self):
-        logging.info(f"[Rotator] Stopping {self._api_type} API key rotation process for {self._model_name}...")
-        with self._lock:
-            self._is_running = False
-            if self._timer:
-                self._timer.cancel()
-                self._timer = None
-        logging.info(f"[Rotator] {self._api_type} API key rotation process stopped for {self._model_name}.")
-    def get_model_for_usage(self):
-        with self._lock:
-            model = self._current_model
-            if model:
-                self._active_api_calls += 1
-                logging.debug(
-                    f"[Rotator] {self._api_type}/{self._model_name} model requested. Active calls: {self._active_api_calls}"
-                )
-            return model
-    def release_model_usage(self):
-        with self._lock:
-            self._active_api_calls = max(0, self._active_api_calls - 1)
-            logging.debug(
-                f"[Rotator] {self._api_type}/{self._model_name} model usage released. Active calls: {self._active_api_calls}"
-            )
 
 # --- IMPORTS & GLOBALS MIGRATED FROM ai_trading_v2.py ---
 import asyncio
@@ -275,90 +165,11 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "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")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-MODEL_GROK = "grok/grok-3-fast-beta"
-MODEL_GPT4O_G4F = "gpt-4o"
-MODEL_GEMINI = "gemini-2.0-flash"
-MODEL_DEEPSEEK = "deepseek/deepseek-chat-v3-0324:free"
-MODEL_META = "meta-llama/llama-4-maverick:free"
-MODEL_NEMOTRON = "nvidia/llama-3.1-nemotron-ultra-253b-v1:free"
-MODEL_REKA = "google/gemma-3-12b-it:free"
-MODEL_NEMOTRON_SUPER = "nvidia/llama-3.3-nemotron-super-49b-v1:free"
-MODEL_QWEN = "qwen/qwen-2.5-7b-instruct:free"
-AI_MODELS_TO_CALL = {
-    "GROK": {"type": "xai", "model_name": XAI_MODEL},
-    "GPT4O": {"type": "g4f", "model_name": MODEL_GPT4O_G4F},
-    "DEEPSEEK": {"type": "openrouter", "model_name": MODEL_DEEPSEEK},
-    "GEMINI": {"type": "gemini", "model_name": MODEL_GEMINI},
-    "NEMOTRON": {"type": "openrouter", "model_name": MODEL_NEMOTRON},
-    "REKA": {"type": "openrouter", "model_name": MODEL_REKA},
-    "META": {"type": "openrouter", "model_name": MODEL_META},
-    "NEMOTRON_SUPER": {"type": "openrouter", "model_name": MODEL_NEMOTRON_SUPER},
-    "QWEN_INSTRUCT": {"type": "openrouter", "model_name": MODEL_QWEN},
-}
-SYMBOL_SETTINGS = {
-    "XAUUSD": {
-        "volume": 0.01,
-        "max_orders": 0,
-        "sl_pips": 30.0,
-        "breakeven_pips": 10.0,
-        "be_target_profit_pips": 5.0,
-        "trailing_trigger_pips": 15.0,
-        "trailing_distance_pips": 15,
-        "pip_definition_in_points": 10
-    },
-    "BTCUSD": {
-        "volume": 0.01,
-        "max_orders": 1,
-        "sl_pips": 300.0,
-        "breakeven_pips": 120.0,
-        "be_target_profit_pips": 20.0,
-        "trailing_trigger_pips": 170.0,
-        "trailing_distance_pips": 50.0,
-        "pip_definition_in_points": 100
-    }
-}
-SCALPING_SYMBOLS = list(SYMBOL_SETTINGS.keys())
-allowed_symbols = list(SYMBOL_SETTINGS.keys())
-required_consensus = 4
-SCALPING_ENTRY_INTERVAL = 90
-MANAGE_POSITIONS_INTERVAL = 4
-BOT_MAGIC_NUMBER = 345678
-EMA_FAST_PERIOD = 9
-EMA_SLOW_PERIOD = 20
-STOCH_K_PERIOD = 14
-STOCH_D_PERIOD = 3
-BBANDS_PERIOD = 20
-BBANDS_STDDEV = 2.0
-RSI_PERIOD = 14
-ATR_PERIOD = 14
-MACD_FAST = 12
-MACD_SLOW = 26
-MACD_SIGNAL = 9
-SUPERTREND_PERIOD = 10
-SUPERTREND_MULTIPLIER = 3.0
-MIN_DATA_ROWS_FOR_ANALYSIS = 20
-MIN_DATA_ROWS_AFTER_INITIAL_DROP = 50
-DEFAULT_CANDLES_TO_REQUEST = 300
-ADDITIONAL_LOOKBACK_BUFFER = 200
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("grok_scalping_bot_v4.log", encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("GrokScalpBotV4")
-logger.info("Logging initialized.")
-gemini_rotator = None
-openrouter_rotators = {}
-gemini_api_keys = []
-openrouter_api_keys = []
 
 # --- APIKeyRotator class (unchanged) ---
 class APIKeyRotator:
     def __init__(
-            self, keys, interval_seconds=60, api_type="gemini", model_name=MODEL_GEMINI
+            self, keys, interval_seconds=60, api_type="gemini", model_name=Config.MODEL_GEMINI
     ):
         if not keys:
             raise ValueError("API keys list cannot be empty")
@@ -1040,7 +851,7 @@ def normalize_reversal_ai_output_rm(output: any, logger) -> str:
 # ===============================================================================
 async def call_xai_api_for_reversal(prompt: str, symbol: str, logger) -> str | Exception:
     """Calls the xAI (Grok) model for reversal decision (CLOSE/HOLD)."""
-    logger.info(f"--- [RM] Calling xAI API ({XAI_MODEL}) for reversal {symbol} ---")
+    logger.info(f"--- [RM] Calling xAI API ({Config.XAI_MODEL}) for reversal {symbol} ---")
     if not XAI_API_KEY:
         logger.error("[RM] XAI_API_KEY is not configured.")
         return Exception("XAI Key missing")
@@ -1056,7 +867,7 @@ async def call_xai_api_for_reversal(prompt: str, symbol: str, logger) -> str | E
         ]
         completion = await asyncio.to_thread(
             client.chat.completions.create,
-            model=XAI_MODEL,
+            model=Config.XAI_MODEL,
             messages=messages,
             temperature=0.5,
             max_tokens=30,
@@ -1583,7 +1394,7 @@ async def closed_order_monitor_task():
                                         profit_usd = None
                                 close_reason = "CLOSED"
                             except Exception as calc_err:
-                                logger.error(f"Error calculating profit for ticket {ticket_id}: {calc_err}", exc_info=True)
+                                logger.error(f"Error calculating profit for ticket {ticket_id}: {calc_err}")
                                 profit_pips = None
                                 profit_usd = None
                             logger.info(f"[DB Update Call] Ticket: {ticket_id}, ClosePrice: {close_price}, CloseTime: {close_time}, "
@@ -1632,7 +1443,7 @@ async def call_gpt4o_api_for_direction(prompt: str, symbol: str) -> str:
             {"role": "user", "content": prompt}
         ]
         response = await client.chat.completions.create(
-            model=MODEL_GPT4O_G4F,
+            model=Config.MODEL_GPT4O_G4F,
             messages=messages,
         )
         final_content = getattr(response.choices[0].message, 'content', None)
@@ -1650,12 +1461,11 @@ async def call_gpt4o_api_for_direction(prompt: str, symbol: str) -> str:
 # --- Hàm gọi xAI (Grok) giữ nguyên logic, chỉ cần đảm bảo trả về format chuẩn ---
 async def call_xai_api_for_direction(prompt: str, symbol: str) -> str:
     """Calls the xAI (Grok) model for trading direction."""
-    logger.info(f"--- Calling xAI API ({XAI_MODEL}) for {symbol} ---")
+    logger.info(f"--- Calling xAI API ({Config.XAI_MODEL}) for {symbol} ---")
     
     # Lấy API key từ Config
     try:
         # Sử dụng API key từ Config hoặc từ biến môi trường
-        from config import Config
         api_key = Config.XAI_API_KEY if hasattr(Config, 'XAI_API_KEY') else XAI_API_KEY
         model = Config.XAI_MODEL if hasattr(Config, 'XAI_MODEL') else XAI_MODEL
         
@@ -1757,7 +1567,7 @@ async def main():
     try:
         if len(gemini_api_keys) > 0:
             try:
-                gemini_rotator = APIKeyRotator(gemini_api_keys, interval_seconds=60, api_type="gemini", model_name=MODEL_GEMINI)
+                gemini_rotator = APIKeyRotator(gemini_api_keys, interval_seconds=60, api_type="gemini", model_name=Config.MODEL_GEMINI)
                 gemini_rotator.start()
                 logger.info(f"Gemini API Rotator started with {len(gemini_api_keys)} keys")
             except Exception as e:

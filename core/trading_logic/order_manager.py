@@ -10,7 +10,7 @@ import MetaTrader5 as mt5
 
 from core.utils.logging_setup import logger
 from core.utils.constants import BOT_MAGIC_NUMBER, SYMBOL_SETTINGS
-from core.db_logger import log_order_placement
+from core.db_logger import log_order_placement, log_bot_status
 
 async def place_market_order(
     symbol: str, 
@@ -18,6 +18,7 @@ async def place_market_order(
     volume: float, 
     sl_price: float
 ) -> Optional[Tuple[int, float, float, float, datetime]]:
+    await log_bot_status(status="ORDER_ATTEMPT", stage="order_manager_place", details={"symbol": symbol, "order_type": order_type, "volume": volume, "sl_price": sl_price})
     """
     Place a market order in MetaTrader 5.
     
@@ -99,15 +100,18 @@ async def place_market_order(
                 confirmed_sl = sl_price
                 confirmed_tp = tp_price
                 
+            await log_bot_status(status="ORDER_PLACED", stage="order_manager_place", details={"symbol": symbol, "order_type": order_type, "volume": volume, "ticket_id": ticket_id})
             return (ticket_id, entry_price, confirmed_sl, confirmed_tp, timestamp)
         else:
             error_code = result.retcode if result else "Unknown"
             error_msg = f"Failed to place order: {error_code}"
             logger.error(error_msg)
+            await log_bot_status(status="ORDER_FAILED", stage="order_manager_place", details={"symbol": symbol, "order_type": order_type, "volume": volume, "error": error_msg})
             return None
             
     except Exception as e:
         logger.error(f"Error placing market order for {symbol}: {e}", exc_info=True)
+        await log_bot_status(status="ERROR", stage="order_manager_place", details={"symbol": symbol, "order_type": order_type, "volume": volume, "error": str(e)})
         return None
 
 async def modify_stop_loss(ticket_id: int, new_sl: float) -> bool:
@@ -237,12 +241,14 @@ async def manage_positions():
     """
     Manage existing positions (trailing stop, breakeven, etc.).
     """
+    await log_bot_status(status="POSITION_MANAGE_START", stage="order_manager_manage_positions", details={})
     try:
         # Get all positions with our magic number
         logger.info(f"Checking for open positions with magic number {BOT_MAGIC_NUMBER}...")
         positions = mt5.positions_get(magic=BOT_MAGIC_NUMBER)
         if not positions:
             logger.info("No open positions found to manage")
+            await log_bot_status(status="NO_POSITIONS", stage="order_manager_manage_positions", details={})
             return 0
             
         logger.info(f"Found {len(positions)} open positions to manage")
@@ -315,9 +321,11 @@ async def manage_positions():
                     result = await modify_stop_loss(ticket, be_price)
                     if result:
                         logger.info(f"Successfully set breakeven for {symbol} position {ticket}")
+                        await log_bot_status(status="BREAKEVEN_SET", stage="order_manager_breakeven", details={"symbol": symbol, "ticket": ticket, "new_sl": be_price})
                         positions_updated += 1
                     else:
                         logger.warning(f"Failed to set breakeven for {symbol} position {ticket}")
+                        await log_bot_status(status="BREAKEVEN_FAILED", stage="order_manager_breakeven", details={"symbol": symbol, "ticket": ticket, "attempted_sl": be_price})
                     continue  # Skip trailing check if we just set breakeven
                 else:
                     logger.info(f"Breakeven already set or not beneficial for {symbol} position {ticket} (current SL: {current_sl}, calculated BE: {be_price})")
@@ -341,9 +349,11 @@ async def manage_positions():
                     result = await modify_stop_loss(ticket, trailing_price)
                     if result:
                         logger.info(f"Successfully set trailing stop for {symbol} position {ticket}")
+                        await log_bot_status(status="TRAILING_STOP_SET", stage="order_manager_trailing_stop", details={"symbol": symbol, "ticket": ticket, "new_sl": trailing_price})
                         positions_updated += 1
                     else:
                         logger.warning(f"Failed to set trailing stop for {symbol} position {ticket}")
+                        await log_bot_status(status="TRAILING_STOP_FAILED", stage="order_manager_trailing_stop", details={"symbol": symbol, "ticket": ticket, "attempted_sl": trailing_price})
                 else:
                     logger.info(f"Trailing stop already set or not beneficial for {symbol} position {ticket} (current SL: {current_sl}, calculated trailing: {trailing_price})")
             else:
@@ -351,7 +361,9 @@ async def manage_positions():
             
     except Exception as e:
         logger.error(f"Error managing positions: {e}", exc_info=True)
+        await log_bot_status(status="ERROR", stage="order_manager_manage_positions", details={"error": str(e)})
         return 0
         
     logger.info(f"Position management complete. Updated {positions_updated} positions.")
+    await log_bot_status(status="POSITION_MANAGE_DONE", stage="order_manager_manage_positions", details={"positions_updated": positions_updated})
     return positions_updated

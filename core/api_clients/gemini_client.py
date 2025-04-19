@@ -10,6 +10,8 @@ import google.generativeai as genai
 from core.utils.logging_setup import logger
 from core.models.api_key_rotator import APIKeyRotator
 
+from config import Config
+
 # Global variables for response tracking
 gemini_responses = []
 

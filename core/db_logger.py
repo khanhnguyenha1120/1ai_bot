@@ -14,6 +14,46 @@ from asyncpg.pool import Pool # <<< Import Pool từ asyncpg
 from dotenv import load_dotenv
 from decimal import Decimal, ROUND_HALF_UP
 
+# --- Bot Status Logging ---
+async def log_bot_status(
+    status: str,
+    stage: str = None,
+    details: dict = None,
+    error_info: str = None,
+    event_timestamp: datetime = None
+):
+    """
+    Log the bot's operational status and stage to the bot_status_log table.
+    Args:
+        status: Main status string (e.g., 'RUNNING', 'ERROR', 'IDLE')
+        stage: Optional processing stage or sub-status
+        details: Optional dictionary with additional info (will be stored as JSON)
+        error_info: Optional error message or stack trace
+        event_timestamp: Optional timestamp; defaults to now (UTC)
+    """
+    global pool
+    if not pool:
+        logger.warning("log_bot_status called but pool is None. Skipping DB log.")
+        return
+    if event_timestamp is None:
+        event_timestamp = datetime.now(timezone.utc)
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO bot_status_log (event_timestamp, status, stage, details, error_info)
+                VALUES ($1, $2, $3, $4, $5)
+                """,
+                event_timestamp,
+                status,
+                stage,
+                json.dumps(details) if details else None,
+                error_info
+            )
+        logger.info(f"Bot status logged: status={status}, stage={stage}")
+    except Exception as e:
+        logger.error(f"DB Error logging bot status: {e}", exc_info=True)
+
 load_dotenv()
 logger = logging.getLogger("DBLogger")
 DB_CONN_STRING = os.getenv("DATABASE_URL")

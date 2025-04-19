@@ -10,6 +10,7 @@ from openai import OpenAI, APIError, RateLimitError, AuthenticationError
 from core.utils.logging_setup import logger
 from core.utils.constants import XAI_API_KEY, XAI_MODEL
 from core.models.api_key_rotator import APIKeyRotator
+from core.db_logger import log_bot_status
 
 # Global variables for response tracking
 xai_responses = []
@@ -35,6 +36,7 @@ def save_ai_response_by_model(response: str, model_id: str):
 async def call_xai_api_for_direction(prompt: str, symbol: str, 
                                     api_key: str = XAI_API_KEY, 
                                     model: str = XAI_MODEL) -> str:
+    await log_bot_status(status="API_CALL", stage="xai_call", details={"symbol": symbol, "model": model})
     """
     Call the xAI (Grok) API to get a trading direction.
     
@@ -78,6 +80,7 @@ async def call_xai_api_for_direction(prompt: str, symbol: str,
         response_time = time.monotonic() - start_time
         logger.info(f"xAI API response time for {symbol}: {response_time:.2f} seconds")
         logger.debug(f"xAI API Raw Response for {symbol}: {str(completion)[:500]}")
+        await log_bot_status(status="API_RESULT", stage="xai_result", details={"symbol": symbol, "model": model, "response_time": response_time})
         
         if completion and completion.choices and len(completion.choices) > 0:
             final_content = getattr(completion.choices[0].message, 'content', None)
@@ -88,6 +91,7 @@ async def call_xai_api_for_direction(prompt: str, symbol: str,
         
         if final_content:
             save_ai_response_by_model(final_content, "xAI")
+            await log_bot_status(status="API_RESULT_CONTENT", stage="xai_content", details={"symbol": symbol, "model": model, "content": final_content[:200]})
             # Normalize the response
             if "TYPE: BUY" in final_content.upper():
                 logger.info(f"xAI signal for {symbol}: BUY")
@@ -104,28 +108,33 @@ async def call_xai_api_for_direction(prompt: str, symbol: str,
         else:
             logger.warning(f"xAI response for {symbol} had no content.")
             save_ai_response_by_model("INVALID_OUTPUT", "xAI")
+            await log_bot_status(status="API_RESULT_EMPTY", stage="xai_empty", details={"symbol": symbol, "model": model})
             return "INVALID_OUTPUT"
             
     except RateLimitError as rate_err:
         elapsed = time.monotonic() - start_time
         logger.error(f"xAI API rate limit exceeded for {symbol}: {rate_err} in {elapsed:.2f}s")
         save_ai_response_by_model(f"Rate limit error: {str(rate_err)[:50]}", "xAI")
+        await log_bot_status(status="ERROR", stage="xai_rate_limit", details={"symbol": symbol, "model": model, "error": str(rate_err)})
         return f"Error: Rate limit - {str(rate_err)[:50]}"
         
     except AuthenticationError as auth_err:
         elapsed = time.monotonic() - start_time
         logger.error(f"xAI API authentication error for {symbol}: {auth_err} in {elapsed:.2f}s")
         save_ai_response_by_model(f"Authentication error: {str(auth_err)[:50]}", "xAI")
+        await log_bot_status(status="ERROR", stage="xai_auth", details={"symbol": symbol, "model": model, "error": str(auth_err)})
         return f"Error: Auth - {str(auth_err)[:50]}"
         
     except APIError as api_err:
         elapsed = time.monotonic() - start_time
         logger.error(f"xAI API error for {symbol}: {api_err} in {elapsed:.2f}s")
         save_ai_response_by_model(f"API error: {str(api_err)[:50]}", "xAI")
+        await log_bot_status(status="ERROR", stage="xai_api_error", details={"symbol": symbol, "model": model, "error": str(api_err)})
         return f"Error: API - {str(api_err)[:50]}"
         
     except Exception as e:
         elapsed = time.monotonic() - start_time
         logger.error(f"Error calling xAI API for {symbol}: {type(e).__name__} - {e} in {elapsed:.2f}s", exc_info=True)
         save_ai_response_by_model(f"Exception: {type(e).__name__} - {e}", "xAI")
+        await log_bot_status(status="ERROR", stage="xai_exception", details={"symbol": symbol, "model": model, "error": str(e)})
         return f"Error: xAI fail - {str(e)[:50]}"

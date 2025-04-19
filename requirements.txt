@@ -1,1 +1,5 @@
-
+MetaTrader5>=5.0.0
+python-telegram-bot>=20.0
+python-dotenv>=0.19.0
+asyncio>=3.4.3
+logging>=0.5.1.2

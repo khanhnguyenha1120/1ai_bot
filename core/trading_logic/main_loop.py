@@ -23,7 +23,7 @@ from core.trading_logic.signal_processor import (
 from core.trading_logic.order_manager import (
     place_market_order, manage_positions
 )
-from core.db_logger import log_order_placement
+from core.db_logger import log_order_placement, log_bot_status
 
 async def ai_signal_and_entry_loop(
     gemini_rotator=None, 
@@ -301,6 +301,7 @@ async def position_management_loop():
     Loop for managing existing positions (trailing stop, breakeven, etc.).
     """
     logger.info("===== STARTING POSITION MANAGEMENT LOOP =====")
+    await log_bot_status(status="RUNNING", stage="position_loop_start", details={"msg": "Position management loop started"})
     
     # Initialize counter for logging purposes
     cycle_count = 0
@@ -311,11 +312,13 @@ async def position_management_loop():
             start_time = time.monotonic()
             current_timestamp = datetime.now(timezone.utc)
             logger.info(f"===== POSITION MANAGEMENT CYCLE #{cycle_count} at {current_timestamp} =====")
+            await log_bot_status(status="RUNNING", stage="position_cycle_start", details={"cycle": cycle_count, "timestamp": str(current_timestamp)})
             
             # Check MT5 connection
             logger.info("Checking MT5 connection for position management...")
             if not check_mt5_connection():
                 logger.warning("MT5 disconnect detected in position management. Waiting 30 seconds before retry...")
+                await log_bot_status(status="ERROR", stage="position_mt5_connection", details={"cycle": cycle_count, "event": "disconnect"})
                 await asyncio.sleep(30)
                 continue
             logger.info("MT5 connection verified for position management")
@@ -325,12 +328,15 @@ async def position_management_loop():
             positions_updated = await manage_positions()
             if positions_updated:
                 logger.info(f"Successfully updated {positions_updated} positions")
+                await log_bot_status(status="TRAILING_STOP", stage="manage_positions", details={"cycle": cycle_count, "updated": positions_updated})
             else:
                 logger.info("No positions required updates")
+                await log_bot_status(status="IDLE", stage="manage_positions", details={"cycle": cycle_count, "updated": 0})
             
             # End of cycle
             cycle_time = time.monotonic() - start_time
             logger.info(f"===== POSITION MANAGEMENT CYCLE #{cycle_count} COMPLETE. Time: {cycle_time:.2f}s =====")
+            await log_bot_status(status="CYCLE_DONE", stage="position_cycle_end", details={"cycle": cycle_count, "cycle_time": cycle_time})
             
             # Wait until next check
             logger.info(f"Waiting {MANAGE_POSITIONS_INTERVAL} seconds until next position check...")
@@ -338,5 +344,6 @@ async def position_management_loop():
             
         except Exception as e:
             logger.error(f"Unexpected error in position_management_loop: {e}", exc_info=True)
+            await log_bot_status(status="ERROR", stage="position_loop", details={"cycle": cycle_count, "error": str(e)})
             logger.warning("Position management cycle failed. Waiting 10 seconds before retry...")
             await asyncio.sleep(10)  # Wait before retrying
